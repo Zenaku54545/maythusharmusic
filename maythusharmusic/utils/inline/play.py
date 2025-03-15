@@ -190,7 +190,7 @@ def telegram_markup(_, chat_id):
 ## Queue Markup
 
 
-def queue_markup(_, videoid, chat_id):
+def queue_markup(_, chat_id):
 
     buttons = [
         [
