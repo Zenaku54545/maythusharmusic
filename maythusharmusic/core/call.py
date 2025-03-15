@@ -11,10 +11,13 @@ from pytgcalls.exceptions import (
     NoActiveGroupCall,
     TelegramServerError,
 )
-from pytgcalls.types import Update
-from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
+from pytgcalls.types import (
+    AudioQuality,
+    VideoQuality,
+    Update,
+)
 from pytgcalls.types.stream import StreamAudioEnded
+from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
 
 import config
 from maythusharmusic import LOGGER, YouTube, app
