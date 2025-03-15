@@ -55,7 +55,6 @@ from maythusharmusic.utils.database import add_active_video_chat, is_active_chat
 from maythusharmusic.utils.exceptions import AssistantErr
 from maythusharmusic.utils.inline import (
     aq_markup,
-    queuemarkup,
     close_markup,
     stream_markup,
     stream_markup2,
