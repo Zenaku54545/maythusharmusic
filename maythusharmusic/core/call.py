@@ -10,7 +10,6 @@ from pyrogram.errors import (
 )
 from pyrogram.types import InlineKeyboardMarkup
 from pyrogram.enums import ChatMemberStatus
-from pytgcalls import pytgcalls,filter
 from ntgcalls import TelegramServerError
 from pytgcalls.types import ChatUpdate, GroupCallParticipant
 from pytgcalls.exceptions import AlreadyJoinedError, NoActiveGroupCall
