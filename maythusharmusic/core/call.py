@@ -10,7 +10,7 @@ from pyrogram.errors import (
 )
 from pyrogram.types import InlineKeyboardMarkup
 from pyrogram.enums import ChatMemberStatus
-from pytgcalls import filters
+from pytgcalls import pytgcalls,filter
 from ntgcalls import TelegramServerError
 from pytgcalls.types import ChatUpdate, GroupCallParticipant
 from pytgcalls.exceptions import AlreadyJoinedError, NoActiveGroupCall
@@ -641,57 +641,33 @@ class Call(PyTgCalls):
             await self.five.start()
 
     async def decorators(self):
-        @self.one.on_update(filters.chat_update(ChatUpdate.Status.LEFT_CALL))
-        @self.two.on_update(filters.chat_update(ChatUpdate.Status.LEFT_CALL))
-        @self.three.on_update(filters.chat_update(ChatUpdate.Status.LEFT_CALL))
-        @self.four.on_update(filters.chat_update(ChatUpdate.Status.LEFT_CALL))
-        @self.five.on_update(filters.chat_update(ChatUpdate.Status.LEFT_CALL))
+        @self.one.on_kicked()
+        @self.two.on_kicked()
+        @self.three.on_kicked()
+        @self.four.on_kicked()
+        @self.five.on_kicked()
+        @self.one.on_closed_voice_chat()
+        @self.two.on_closed_voice_chat()
+        @self.three.on_closed_voice_chat()
+        @self.four.on_closed_voice_chat()
+        @self.five.on_closed_voice_chat()
+        @self.one.on_left()
+        @self.two.on_left()
+        @self.three.on_left()
+        @self.four.on_left()
+        @self.five.on_left()
         async def stream_services_handler(_, chat_id: int):
             await self.stop_stream(chat_id)
 
-        @self.one.on_update(filters.stream_end)
-        @self.two.on_update(filters.stream_end)
-        @self.three.on_update(filters.stream_end)
-        @self.four.on_update(filters.stream_end)
-        @self.five.on_update(filters.stream_end)
+        @self.one.on_stream_end()
+        @self.two.on_stream_end()
+        @self.three.on_stream_end()
+        @self.four.on_stream_end()
+        @self.five.on_stream_end()
         async def stream_end_handler(client, update: Update):
             if not isinstance(update, StreamAudioEnded):
                 return
-            await self.play(client, update.chat_id)
-
-        @self.one.on_update(filters.chat_update(GroupCallParticipant.Action.UPDATED))
-        @self.two.on_update(filters.chat_update(GroupCallParticipant.Action.UPDATED))
-        @self.three.on_update(filters.chat_update(GroupCallParticipant.Action.UPDATED))
-        @self.four.on_update(filters.chat_update(GroupCallParticipant.Action.UPDATED))
-        @self.five.on_update(filters.chat_update(GroupCallParticipant.Action.UPDATED))
-        async def participants_change_handler(client, update: Update):
-            if not isinstance(
-                update, GroupCallParticipant.Action.JOINED
-            ) and not isinstance(update, GroupCallParticipant.Action.LEFT):
-                return
-            chat_id = update.chat_id
-            users = counter.get(chat_id)
-            if not users:
-                try:
-                    got = len(await client.get_participants(chat_id))
-                except:
-                    return
-                counter[chat_id] = got
-                if got == 1:
-                    autoend[chat_id] = datetime.now() + timedelta(minutes=AUTO_END_TIME)
-                    return
-                autoend[chat_id] = {}
-            else:
-                final = (
-                    users + 1
-                    if isinstance(update, GroupCallParticipant.Action.JOINED)
-                    else users - 1
-                )
-                counter[chat_id] = final
-                if final == 1:
-                    autoend[chat_id] = datetime.now() + timedelta(minutes=AUTO_END_TIME)
-                    return
-                autoend[chat_id] = {}
+            await self.change_stream(client, update.chat_id)
 
 
 Hotty = Call()
