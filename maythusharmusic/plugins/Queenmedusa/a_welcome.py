@@ -96,21 +96,12 @@ async def auto_state(_, message):
         await message.reply("**sᴏʀʀʏ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴇɴᴀʙʟᴇ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ!**")
 
 # Auto-welcome message for new members
-@app.on_chat_member_updated(filters.group, group=-3)
-async def greet_group(_, member: ChatMemberUpdated):
-    chat_id = member.chat.id
-    A = await wlcm.find_one(chat_id)
-    if (
-        not member.new_chat_member
-        or member.new_chat_member.status in {"banned", "left", "restricted"}
-        or member.old_chat_member
-    ):
-        return
-    user = member.new_chat_member.user if member.new_chat_member else member.from_user
-
-        if member.new_chat_member and not member.old_chat_member:
-            welcome_text = f"{user.mention}, ωᴇℓᴄᴏᴍᴇ ʙᴀʙʏ🦋"
-            await userbot.send_message(chat_id, text=welcome_text)
+@app.on_chat_member_updated(filters.group)
+async def greet_new_members(_, member: ChatMemberUpdated):
+    if member.new_chat_member and member.new_chat_member.status == "member":
+        user = member.new_chat_member.user
+        chat_id = member.chat.id
+        await app.send_message(chat_id, f"{user.mention} ωᴇℓᴄᴏᴍᴇ ʙᴀʙʏ 🎉")
 
     except Exception as e:
         return
