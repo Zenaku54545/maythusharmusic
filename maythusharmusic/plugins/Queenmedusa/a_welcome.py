@@ -1,243 +1,115 @@
-import datetime
-from re import findall
+import asyncio
+import time
+from logging import getLogger
+from time import time
 
-from pyrogram import filters
-from pyrogram.enums import ChatMemberStatus as CMS
-from pyrogram.errors.exceptions.bad_request_400 import ChatAdminRequired
-from pyrogram.types import (
-    Chat,
-    ChatMemberUpdated,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont
+from pyrogram import enums, filters
+from pyrogram.types import ChatMemberUpdated
+
 from maythusharmusic import app
-from maythusharmusic.misc import SUDOERS
-from maythusharmusic.utils.database import is_gbanned_user
-from maythusharmusic.utils.functions import check_format, extract_text_and_keyb
-from maythusharmusic.utils.keyboard import ikb
+from maythusharmusic.utils.database import get_assistant
+from pymongo import MongoClient
+from config import MONGO_DB_URI
 
-extract_urls = utils.extract_urls
+# Define a dictionary to track the last message timestamp for each user
+user_last_message_time = {}
+user_command_count = {}
+# Define the threshold for command spamming (e.g., 20 commands within 60 seconds)
+SPAM_THRESHOLD = 2
+SPAM_WINDOW_SECONDS = 5
+
+LOGGER = getLogger(__name__)
+
+class temp:
+    ME = None
+    CURRENT = 2
+    CANCEL = False
+    MELCOW = {}
+    U_NAME = None
+    B_NAME = None
 
 
-async def handle_new_member(member, chat):
+# Database setup for welcome status
+awelcomedb = MongoClient(MONGO_DB_URI)
+astatus_db = awelcomedb.awelcome_status_db.status
 
-    try:
-        if member.id in SUDOERS:
-            return
-        if await is_gbanned_user(member.id):
-            await chat.ban_member(member.id)
-            await app.send_message(
-                chat.id,
-                f"{member.mention} was globally banned, and got removed,"
-                + " if you think this is a false gban, you can appeal"
-                + " for this ban in support chat.",
+async def get_awelcome_status(chat_id):
+    status = astatus_db.find_one({"chat_id": chat_id})
+    if status:
+        return status.get("welcome", "on")
+    return "on"
+
+async def set_awelcome_status(chat_id, state):
+    astatus_db.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"welcome": state}},
+        upsert=True
+    )
+
+# Command to toggle welcome message
+@app.on_message(filters.command("awelcome") & ~filters.private)
+async def auto_state(_, message):
+    user_id = message.from_user.id
+    current_time = time()
+
+    last_message_time = user_last_message_time.get(user_id, 0)
+    if current_time - last_message_time < SPAM_WINDOW_SECONDS:
+        user_last_message_time[user_id] = current_time
+        user_command_count[user_id] = user_command_count.get(user_id, 0) + 1
+        if user_command_count[user_id] > SPAM_THRESHOLD:
+            hu = await message.reply_text(
+                f"**{message.from_user.mention} ᴘʟᴇᴀsᴇ ᴅᴏɴᴛ ᴅᴏ sᴘᴀᴍ, ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ ᴀғᴛᴇʀ 5 sᴇᴄ**"
             )
+            await asyncio.sleep(3)
+            await hu.delete()
             return
-        if member.is_bot:
-            return
-        return await send_welcome_message(chat, member.id)
-
-    except ChatAdminRequired:
-        return
-
-
-@app.on_chat_member_updated(filters.group, group=6)
-@utils.capture_err
-async def welcome(_, user: ChatMemberUpdated):
-    if not (
-        user.new_chat_member
-        and user.new_chat_member.status not in {CMS.RESTRICTED}
-        and not user.old_chat_member
-    ):
-        return
-
-    member = user.new_chat_member.user if user.new_chat_member else user.from_user
-    chat = user.chat
-    return await handle_new_member(member, chat)
-
-
-async def send_welcome_message(chat: Chat, user_id: int, delete: bool = False):
-    welcome, raw_text, file_id = await utils.get_welcome(chat.id)
-
-    if not raw_text:
-        return
-    text = raw_text
-    keyb = None
-    if findall(r"\[.+\,.+\]", raw_text):
-        text, keyb = extract_text_and_keyb(ikb, raw_text)
-    u = await app.get_users(user_id)
-    if "{GROUPNAME}" in text:
-        text = text.replace("{GROUPNAME}", chat.title)
-    if "{NAME}" in text:
-        text = text.replace("{NAME}", u.mention)
-    if "{ID}" in text:
-        text = text.replace("{ID}", f"`{user_id}`")
-    if "{FIRSTNAME}" in text:
-        text = text.replace("{FIRSTNAME}", u.first_name)
-    if "{SURNAME}" in text:
-        sname = u.last_name or "None"
-        text = text.replace("{SURNAME}", sname)
-    if "{USERNAME}" in text:
-        susername = u.username or "None"
-        text = text.replace("{USERNAME}", susername)
-    if "{DATE}" in text:
-        DATE = datetime.datetime.now().strftime("%Y-%m-%d")
-        text = text.replace("{DATE}", DATE)
-    if "{WEEKDAY}" in text:
-        WEEKDAY = datetime.datetime.now().strftime("%A")
-        text = text.replace("{WEEKDAY}", WEEKDAY)
-    if "{TIME}" in text:
-        TIME = datetime.datetime.now().strftime("%H:%M:%S")
-        text = text.replace("{TIME}", f"{TIME} UTC")
-
-    if welcome == "Text":
-        m = await app.send_message(
-            chat.id,
-            text=text,
-            reply_markup=keyb,
-            disable_web_page_preview=True,
-        )
-    elif welcome == "Photo":
-        m = await app.send_photo(
-            chat.id,
-            photo=file_id,
-            caption=text,
-            reply_markup=keyb,
-        )
-    elif welcome == "Video":
-        m = await app.send_video(
-            chat.id,
-            video=file_id,
-            caption=text,
-            reply_markup=keyb,
-        )
     else:
-        m = await app.send_animation(
-            chat.id,
-            animation=file_id,
-            caption=text,
-            reply_markup=keyb,
-        )
+        user_command_count[user_id] = 1
+        user_last_message_time[user_id] = current_time
 
+    usage = "**ᴜsᴀɢᴇ:**\n**⦿ /awelcome [on|off]**"
+    if len(message.command) == 1:
+        return await message.reply_text(usage)
 
-@app.on_message(filters.command("setwelcome") & ~filters.private)
-@utils.adminsOnly("can_change_info")
-async def set_welcome_func(_, message):
-    usage = "You need to reply to a text, gif or video or photo to set it as greetings.\n\nNotes: caption required for gif and video and photo."
-    key = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    text="More Help",
-                    url=f"t.me/{app.username}?start=greetings",
-                )
-            ],
-        ]
-    )
-    replied_message = message.reply_to_message
     chat_id = message.chat.id
-    try:
-        if not replied_message:
-            await message.reply_text(usage, reply_markup=key)
-            return
-        if replied_message.animation:
-            welcome = "Animation"
-            file_id = replied_message.animation.file_id
-            text = replied_message.caption
-            if not text:
-                return await message.reply_text(usage, reply_markup=key)
-            raw_text = text.markdown
-        elif replied_message.video:
-            welcome = "Video"
-            file_id = replied_message.video.file_id
-            text = replied_message.caption
-            if not text:
-                return await message.reply_text(usage, reply_markup=key)
-            raw_text = text.markdown
-        elif replied_message.photo:
-            welcome = "Photo"
-            file_id = replied_message.photo.file_id
-            text = replied_message.caption
-            if not text:
-                return await message.reply_text(usage, reply_markup=key)
-            raw_text = text.markdown
-        elif replied_message.text:
-            welcome = "Text"
-            file_id = None
-            text = replied_message.text
-            raw_text = text.markdown
-        if replied_message.reply_markup and not findall(r"\[.+\,.+\]", raw_text):
-            urls = extract_urls(replied_message.reply_markup)
-            if urls:
-                response = "\n".join(
-                    [f"{name}=[{text}, {url}]" for name, text, url in urls]
-                )
-                raw_text = raw_text + response
-        raw_text = await check_format(ikb, raw_text)
-        if raw_text:
-            await utils.set_welcome(chat_id, welcome, raw_text, file_id)
-            return await message.reply_text(
-                "Welcome message has been successfully set."
-            )
+    user = await app.get_chat_member(message.chat.id, message.from_user.id)
+    if user.status in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+        state = message.text.split(None, 1)[1].strip().lower()
+        current_status = await get_awelcome_status(chat_id)
+
+        if state == "off":
+            if current_status == "off":
+                await message.reply_text("** ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ ᴅɪsᴀʙʟᴇᴅ!**")
+            else:
+                await set_awelcome_status(chat_id, "off")
+                await message.reply_text(f"**ᴅɪsᴀʙʟᴇᴅ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ** {message.chat.title} **ʙʏ ᴀssɪsᴛᴀɴᴛ**")
+        elif state == "on":
+            if current_status == "on":
+                await message.reply_text("**ᴇɴᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ!**")
+            else:
+                await set_awelcome_status(chat_id, "on")
+                await message.reply_text(f"**ᴇɴᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ** {message.chat.title}")
         else:
-            return await message.reply_text(
-                "Wrong formatting, check the help section.\n\n**Usage:**\nText: `Text`\nText + Buttons: `Text ~ Buttons`",
-                reply_markup=key,
-            )
-    except UnboundLocalError:
-        return await message.reply_text(
-            "**Only Text, Gif and Video, Photo welcome message are supported.**"
-        )
+            await message.reply_text(usage)
+    else:
+        await message.reply("**sᴏʀʀʏ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴇɴᴀʙʟᴇ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ!**")
 
+# Auto-welcome message for new members
+@app.on_chat_member_updated(filters.group, group=5)
+async def greet_new_members(_, member: ChatMemberUpdated):
+    userbot = await get_assistant(member.chat.id)
+    try:
+        chat_id = member.chat.id
+        welcome_status = await get_awelcome_status(chat_id)
+        if welcome_status == "off":
+            return
 
-@app.on_message(filters.command(["delwelcome", "deletewelcome"]) & ~filters.private)
-@utils.adminsOnly("can_change_info")
-async def del_welcome_func(_, message):
-    chat_id = message.chat.id
-    await utils.del_welcome(chat_id)
-    await message.reply_text("Welcome message has been deleted.")
+        userbot = member.new_chat_member.user if member.new_chat_member else member.from_user
 
+        if member.new_chat_member and not member.old_chat_member:
+            welcome_text = f"{user.mention}, ωᴇℓᴄᴏᴍᴇ ʙᴀʙʏ🦋"
+            await userbot.send_message(chat_id, text=welcome_text)
 
-@app.on_message(filters.command("getwelcome") & ~filters.private)
-@utils.adminsOnly("can_change_info")
-async def get_welcome_func(_, message):
-    chat = message.chat
-    welcome, raw_text, file_id = await utils.get_welcome(chat.id)
-    if not raw_text:
-        return await message.reply_text("No welcome message set.")
-    if not message.from_user:
-        return await message.reply_text("You're anon, can't send welcome message.")
-
-    await send_welcome_message(chat, message.from_user.id)
-
-    await message.reply_text(
-        f'Welcome: {welcome}\n\nFile_id: `{file_id}`\n\n`{raw_text.replace("`", "")}`'
-    )
-
-
-__MODULE__ = "Wᴇʟᴄᴏᴍᴇ"
-__HELP__ = """
-/setwelcome - Rᴇᴘʟʏ ᴛʜɪs ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ ᴄᴏɴᴛᴀɪɴɪɴɢ ᴄᴏʀʀᴇᴄᴛ
-ғᴏʀᴍᴀᴛ ғᴏʀ ᴀ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ, ᴄʜᴇᴄᴋ ᴇɴᴅ ᴏғ ᴛʜɪs ᴍᴇssᴀɢᴇ.
-
-/delwelcome - Dᴇʟᴇᴛᴇ ᴛʜᴇ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ.
-/getwelcome - Gᴇᴛ ᴛʜᴇ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ.
-
-**SET_WELCOME ->**
-
-**Tᴏ sᴇᴛ ᴀ ᴘʜᴏᴛᴏ ᴏʀ ɢɪғ ᴀs ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ. Aᴅᴅ ʏᴏᴜʀ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ ᴀs ᴄᴀᴘᴛɪᴏɴ ᴛᴏ ᴛʜᴇ ᴘʜᴏᴛᴏ ᴏʀ ɢɪғ. Tʜᴇ ᴄᴀᴘᴛɪᴏɴ ᴍᴜsᴇ ʙᴇ ɪɴ ᴛʜᴇ ғᴏʀᴍᴀᴛ ɢɪᴠᴇɴ ʙᴇʟᴏᴡ.**
-
-Fᴏʀ ᴛᴇxᴛ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇ ɪᴜsᴛ sᴇɴᴅ ᴛʜᴇ ᴛᴇxᴛ. Tʜᴇɴ ʀᴇᴘʟʏ ᴡɪᴛʜ ᴛʜᴇ ᴄᴏᴍᴍᴀɴᴅ
-
-Tʜᴇ ғᴏʀᴍᴀᴛ sʜᴏᴜʟᴅ ʙᴇ sᴏᴍᴇᴛʜɪɴɢ ʟɪᴋᴇ ʙᴇʟᴏᴡ.
-
-**Hɪ** {NAME} [{ID}] Wᴇʟᴄᴏᴍᴇ ᴛᴏ {GROUPNAME}
-
-~ #Tʜɪs sᴇᴘᴀʀᴀᴛᴇʀ (~) sʜᴏᴜʟᴅ ʙᴇ ᴛʜᴇʀᴇ ʙᴇᴛᴡᴇᴇɴ ᴛᴇxᴛ ᴀɴᴅ ʙᴜᴛᴛᴏɴs, ʀᴇᴍᴏᴠᴇ ᴛʜɪs ᴄᴏᴍᴍᴇɴᴛ ᴀʟsᴏ
-
-Button=[Dᴜᴄᴋ, ʜᴛᴛᴘs://ᴅᴜᴄᴋᴅᴜᴄᴋɢᴏ.ᴄᴏᴍ]
-Button2=[Gɪᴛʜᴜʙ, ʜᴛᴛᴘs://ɢɪᴛʜᴜʙ.ᴄᴏᴍ]
-**NOTES ->**
-
-Cʜᴇᴄᴋᴏᴜᴛ /markdownhelp ᴛᴏ ᴋɴᴏᴡ ᴍᴏʀᴇ ᴀʙᴏᴜᴛ ғᴏʀᴍᴀᴛᴛɪɴɢs ᴀɴᴅ ᴏᴛʜᴇʀ sʏɴᴛᴀx.
-"""
+    except Exception as e:
+        return
